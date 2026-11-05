@@ -7,6 +7,11 @@ tag without the leading `v`.
 
 ## [Unreleased]
 
+### Removed
+
+- The Elder Scrolls Online process check before **Back up and apply**. Scan, review and
+  apply work whether or not the game client is running; update manually if you prefer.
+
 ## [1.1.0] - 2026-11-05
 
 ### Removed

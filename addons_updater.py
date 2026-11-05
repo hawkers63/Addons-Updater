@@ -16,7 +16,6 @@ import os
 import re
 import shutil
 import stat
-import subprocess
 import tempfile
 import threading
 import webbrowser
@@ -826,40 +825,7 @@ def install_zip(
                 _clean_zip_stage(stage)
 
 
-ESO_PROCESS = "eso64.exe"
-_CREATE_NO_WINDOW = 0x08000000
 
-
-def is_eso_running() -> bool:
-    """Report whether the game client is running. Fails open: if tasklist cannot run, say no."""
-    try:
-        output = subprocess.check_output(
-            ["tasklist", "/FI", f"IMAGENAME eq {ESO_PROCESS}", "/NH"],
-            creationflags=_CREATE_NO_WINDOW, text=True, encoding="utf-8", errors="ignore",
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return ESO_PROCESS in output.casefold()
-
-
-def verify_game_closed(parent) -> bool:
-    """Return True when it is safe to continue: the game is closed, or the user chose to go on.
-
-    Call it on the UI thread before any work starts, so declining costs nothing.
-    """
-    if not is_eso_running():
-        return True
-    return messagebox.askyesno(
-        title="Elder Scrolls Online is running",
-        message=(
-            f"The game client ({ESO_PROCESS}) is running.\n\n"
-            "Add-on changes made while the game is open only take effect after you reload the "
-            "UI or restart it, and files the game has open may stop a replacement.\n\n"
-            "Back up and apply anyway?"
-        ),
-        icon="warning", default=messagebox.NO, parent=parent,
-    )
 
 
 class UpdaterApp(ctk.CTk):
@@ -1343,7 +1309,7 @@ class PackagePreview(ctk.CTkToplevel):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
         ctk.CTkLabel(
-            self, text="Choose folders to apply. Close ESO and other add-on managers first.",
+            self, text="Choose folders to apply.",
             anchor="w", justify="left",
         ).grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
         rows = ctk.CTkScrollableFrame(self)
@@ -1391,8 +1357,6 @@ class PackagePreview(ctk.CTkToplevel):
         selected = tuple(name for name, box in self.boxes.items() if box.get())
         if not selected:
             messagebox.showinfo("Select folders", "Choose at least one eligible folder.", parent=self)
-            return
-        if not verify_game_closed(self):
             return
         self.app.preview = None
         self.destroy()

@@ -40,8 +40,6 @@ While community tools such as Minion serve general catalogue updates, modern add
 - **SavedVariables Firewall:**  
   Refuses to scan, preview or write unless the configured folder is an `AddOns` directory. A parent folder such as `live`, any path through `SavedVariables`, and any backup location inside `SavedVariables` are rejected before anything is touched, so character data stays out of every operation.
 
-- **Game-Running Warning:**  
-  Before applying a package, checks whether `eso64.exe` is running. If it is, a warning asks you to confirm (the default answer is No) and keeps the preview open, so you can close the game and try again.
 
 - **Discontinued & Deprecation Review Filters:**  
   Cross-references installed add-ons against ESOUI's *Discontinued & Outdated* catalogued listings (e.g. `CritPercent`, `ESO-Database Export`, `MundusMap`), recommending cleanup when appropriate.
@@ -141,7 +139,7 @@ flowchart TD
 1. **Scan Folder:** Click **Scan folder** to catalogue all installed folders in your live add-on directory.
 2. **Check GitHub Releases:** Click **Check GitHub releases** to query publisher repositories for stable updates with downloadable asset archives.
 3. **Import ZIP:** For add-ons downloaded from publisher sites or ESOUI, click **Import ZIP…** and select the archive.
-4. **Inspect & Apply:** Review the package version against the installed version in the preview dialogue. Select eligible folders and click **Back up and apply**. If the game is running, you are asked to confirm first.
+4. **Inspect & Apply:** Review the package version against the installed version in the preview dialogue. Select eligible folders and click **Back up and apply**.
 5. **Review Outdated Add-ons:** Activate the **Review** filter to inspect deprecated listings, discontinued projects, or libraries with unmet version requirements.
 
 ---
