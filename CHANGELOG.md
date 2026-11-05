@@ -11,7 +11,7 @@ tag without the leading `v`.
 
 ### Removed
 
-- CLAUDE.md and 	ests/ are no longer published; both stay local through .gitignore.
+- CLAUDE.md and `tests`/ are no longer published; both stay local through .gitignore.
   Repository commits, pushes and GitHub releases are handled by Steve (Grok Bot).
 
 
