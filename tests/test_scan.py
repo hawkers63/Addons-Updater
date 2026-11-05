@@ -121,10 +121,9 @@ class ScanAddonsTests(SandboxCase):
         self.assertEqual(linked.version, "")
 
     def test_a_linked_add_ons_directory_is_refused(self):
-        real = self.tmp / "RealAddOns"
-        real.mkdir()
-        link = self.tmp / "LinkedAddOns"
-        self.make_junction(link, real)
+        link = self.tmp / "elsewhere" / "AddOns"    # correctly named, so only the link can refuse it
+        link.parent.mkdir()
+        self.make_junction(link, self.tmp / "RealAddOns")
         with self.assertRaisesRegex(ValueError, "link"):
             app.scan_addons(link)
 

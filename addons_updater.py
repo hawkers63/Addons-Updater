@@ -180,7 +180,41 @@ def dependency_names(fields: dict[str, str], *keys: str) -> tuple[str, ...]:
     return tuple(names.values())
 
 
+_ADDONS_DIR_NAME = "addons"
+_SAVED_VARIABLES_NAME = "savedvariables"
+
+
+def assert_addons_root(path: Path) -> Path:
+    """Return the absolute AddOns directory, refusing anything that could reach SavedVariables.
+
+    Character data lives beside AddOns. A configured parent folder, or the SavedVariables
+    directory itself, must never be scanned, previewed or written.
+    """
+    resolved = Path(os.path.abspath(path))
+    if _SAVED_VARIABLES_NAME in (part.casefold() for part in resolved.parts):
+        raise ValueError("Refusing to use a SavedVariables path. Character data is never "
+                         "modified. Check addons_dir in config.json.")
+    if resolved.name.casefold() != _ADDONS_DIR_NAME:
+        raise ValueError("Choose the AddOns directory itself, not its parent. SavedVariables "
+                         "sits beside AddOns and must stay untouched. Check addons_dir in "
+                         "config.json.")
+    return resolved
+
+
+def assert_backup_root(backup_root: Path, addons_root: Path) -> None:
+    """Reject a backup location that could write into, or replace, SavedVariables."""
+    if _SAVED_VARIABLES_NAME in (part.casefold() for part in backup_root.parts):
+        raise ValueError("Backups must not be written into SavedVariables.")
+    try:
+        replaces = backup_root.resolve() == (addons_root.parent / "SavedVariables").resolve()
+    except OSError:
+        return
+    if replaces:
+        raise ValueError("Backups must not replace the SavedVariables directory.")
+
+
 def scan_addons(root: Path) -> tuple[tuple[Addon, ...], str]:
+    root = assert_addons_root(root)
     if is_reparse(root):
         raise ValueError("The add-on directory is a link.")
     try:
@@ -613,6 +647,7 @@ def _zip_open_stamp(file) -> tuple[int, ...]:
 
 def inspect_zip(zip_path: Path, root: Path) -> tuple[PackageAddon, ...]:
     root = _check_directory_path(root)
+    assert_addons_root(root)
     with zip_path.open("rb") as file:
         stamp = _zip_open_stamp(file)
         with zipfile.ZipFile(file) as archive:
@@ -744,6 +779,8 @@ def install_zip(
 ) -> Path:
     root = _check_directory_path(root)
     backup_root = _check_directory_path(backup_root)
+    assert_addons_root(root)
+    assert_backup_root(backup_root, root)
     if not root.is_dir() or root == root.parent or backup_root.is_relative_to(root):
         raise ValueError("Choose a valid AddOns directory and a backup location outside it.")
     selected_names = {name.casefold() for name in selected}
