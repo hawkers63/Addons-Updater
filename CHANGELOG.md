@@ -7,6 +7,8 @@ tag without the leading `v`.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-05
+
 ### Removed
 
 - CLAUDE.md and 	ests/ are no longer published; both stay local through .gitignore.
@@ -73,6 +75,7 @@ Baseline release.
 - CustomTkinter interface that follows the system light/dark theme.
 - Proprietary licence and copyright notices.
 
-[Unreleased]: https://github.com/hawkers63/Addons-Updater/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/hawkers63/Addons-Updater/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/hawkers63/Addons-Updater/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/hawkers63/Addons-Updater/compare/v1.0...v1.0.1
 [1.0]: https://github.com/hawkers63/Addons-Updater/releases/tag/v1.0
