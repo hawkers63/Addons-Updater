@@ -32,7 +32,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import customtkinter as ctk
 
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = APP_DIR / "config.json"
 DEFAULT_ADDONS_DIR = Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Addons"
