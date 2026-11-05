@@ -54,3 +54,7 @@ scratch/
 # Local design notes and icon assets (keep off remote)
 notes/
 icon/
+
+# Local planning and session memory (keep off remote)
+ROADMAP.md
+MEMORY.md
