@@ -276,7 +276,7 @@ def scan_addons(root: Path) -> tuple[tuple[Addon, ...], str]:
                 folder.name, title or folder.name, fields.get("version", ""),
                 fields.get("addonversion", ""), api,
                 dependency_names(fields, "dependson", "pcdependson"),
-                dependency_names(fields, "optionaldepends", "pcoptionaldepends"), issue,
+                dependency_names(fields, "optionaldependson", "pcoptionaldependson"), issue,
                 minimums=minimums,
             ))
         except (OSError, ValueError) as exc:

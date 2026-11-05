@@ -37,12 +37,11 @@ class ScanAddonsTests(SandboxCase):
         self.assertFalse(alpha.external)
         self.assertEqual(alpha.issue, "")
 
-    @unittest.expectedFailure
-    def test_reads_optional_dependencies(self):
-        # Known defect (ROADMAP amendment J): scan_addons looks up "optionaldepends", but the
-        # manifest directive is OptionalDependsOn. Remove this decorator when M3 fixes it.
-        self.make_addon("Alpha", OptionalDependsOn="LibOpt")
-        self.assertEqual(self.scanned()["Alpha"].optional, ("LibOpt",))
+    def test_reads_optional_dependencies_without_treating_them_as_requirements(self):
+        self.make_addon("Alpha", OptionalDependsOn="LibOpt LibMore>=3", PCOptionalDependsOn="LibPc")
+        alpha = self.scanned()["Alpha"]
+        self.assertEqual(alpha.optional, ("LibOpt", "LibMore", "LibPc"))
+        self.assertEqual((alpha.depends, alpha.minimums), ((), ()))
 
     def test_addon_manifest_wins_and_a_disagreement_is_flagged(self):
         beta = self.make_addon("Beta", ext=".addon", version="2.0", addon_version="20")
