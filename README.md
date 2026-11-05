@@ -25,6 +25,9 @@ While community tools such as Minion serve general catalogue updates, modern add
 
 ## 2. Key Features
 
+- **Update Highlighting:**  
+  Add-ons with a newer GitHub release (**Update available** / **Newer release tag**) appear in red in the left list.
+
 - **Live Add-on Directory Inspection:**  
   Scans active ESO add-on directories (`live\Addons`), indexing folder names, manifest titles, version numbers (`Version` and `AddOnVersion`), API declarations (`APIVersion`), declared dependencies (`DependsOn`), and optional dependencies (`OptionalDependsOn`).
 

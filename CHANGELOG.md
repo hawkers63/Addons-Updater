@@ -7,6 +7,10 @@ tag without the leading `v`.
 
 ## [Unreleased]
 
+### Added
+
+- Left-list rows with **Update available** or **Newer release tag** use red text so outdated add-ons stand out.
+
 ### Removed
 
 - The Elder Scrolls Online process check before **Back up and apply**. Scan, review and

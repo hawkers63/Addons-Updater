@@ -435,6 +435,11 @@ def download_release(asset: dict, target: Path) -> None:
         raise ValueError("Release ZIP did not match GitHub's published checksum.")
 
 
+UPDATE_STATUSES = frozenset({"Update available", "Newer release tag"})
+ROW_TEXT = ("gray12", "gray90")
+UPDATE_TEXT = ("#b42318", "#ff6b6b")  # light / dark — outdated rows in the left list
+
+
 def release_status(addon: Addon, release: Release | None, repo: str) -> str:
     if addon.external:
         return "External"
@@ -1062,16 +1067,18 @@ class UpdaterApp(ctk.CTk):
             status = release_status(addon, self.release_for(addon), repo)
             review = bool(self.recommendations(addon))
             if (search not in f"{addon.name} {addon.title}".casefold()
-                    or (active == "Updates" and status not in {"Update available", "Newer release tag"})
+                    or (active == "Updates" and status not in UPDATE_STATUSES)
                     or (active == "Review" and not review)
                     or (active == "External" and not addon.external)
                     or (active == "Manual sources" and status != "Manual source")):
                 continue
             visible.append(addon.name)
             badge = "Review" if review and not status.startswith("Update") else status
+            needs_update = status in UPDATE_STATUSES
             button = ctk.CTkButton(
                 self.rows, text=f"{addon.name[:36]}  ·  {badge}", anchor="w", height=30,
-                fg_color="transparent", text_color=("gray12", "gray90"),
+                fg_color="transparent",
+                text_color=UPDATE_TEXT if needs_update else ROW_TEXT,
                 command=lambda name=addon.name: self.select(name),
             )
             button.grid(row=len(visible) - 1, column=0, sticky="ew", pady=1)
