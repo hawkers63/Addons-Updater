@@ -53,18 +53,20 @@ While community tools such as Minion serve general catalogue updates, modern add
 ```text
 C:\Addons Updater\
 ├── addons_updater.py             # Core Python application and UI engine
+├── tests\                        # Standard-library unittest suite
 ├── config.example.json           # Generic configuration schema template
 ├── release_sources.example.json  # Publisher GitHub source mapping template
 ├── requirements-updater.txt      # Python runtime dependencies
 ├── Run-Addons-Updater.bat        # Production launcher batch script
 ├── LICENSE                       # Proprietary copyright and licensing terms
+├── CHANGELOG.md                  # Release history
 └── README.md                     # Comprehensive project documentation
 ```
 
 ### Configuration Files (Local State)
 
 Local machine paths and private source mappings are sanitised from version control via `.gitignore`:
-- `config.json`: Defines the local ESO AddOns path on disk (e.g. `C:\\Users\\<username>\\Documents\\Elder Scrolls Online\\live\\Addons`).
+- `config.json`: Defines the local ESO AddOns path on disk (e.g. `C:\Users\<username>\Documents\Elder Scrolls Online\live\Addons`).
 - `release_sources.json`: Stores user-mapped custom GitHub repositories for specific add-ons.
 - `Backups/`: Contains local timestamped backups and `operation.json` snapshots.
 
@@ -105,7 +107,7 @@ Execute the packaged batch launcher:
 ```powershell
 .\Run-Addons-Updater.bat
 ```
-Alternatively, launch via Python:
+The launcher expects Python 3.11 installed per user at `%LOCALAPPDATA%\Programs\Python\Python311`, with the packages from `requirements-updater.txt`. With any other Python 3.11+ installation, launch via Python instead:
 ```powershell
 pythonw addons_updater.py
 ```
@@ -156,7 +158,7 @@ Should an updated add-on cause an in-game issue or script error:
 ### `config.json`
 ```json
 {
-  "addons_dir": "C:\\\\Users\\\\<username>\\\\Documents\\\\Elder Scrolls Online\\\\live\\\\Addons"
+  "addons_dir": "C:\\Users\\<username>\\Documents\\Elder Scrolls Online\\live\\Addons"
 }
 ```
 * **`addons_dir`** *(string)*: Absolute path to the active `AddOns` directory.
