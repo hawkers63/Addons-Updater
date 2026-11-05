@@ -37,6 +37,12 @@ While community tools such as Minion serve general catalogue updates, modern add
 - **Reversible Backup & Restore Engine:**  
   Archives existing targeted add-on directories prior to extracting new files. Each operation generates a timestamped directory containing the original folders and an `operation.json` audit manifest.
 
+- **SavedVariables Firewall:**  
+  Refuses to scan, preview or write unless the configured folder is an `AddOns` directory. A parent folder such as `live`, any path through `SavedVariables`, and any backup location inside `SavedVariables` are rejected before anything is touched, so character data stays out of every operation.
+
+- **Game-Running Warning:**  
+  Before applying a package, checks whether `eso64.exe` is running. If it is, a warning asks you to confirm (the default answer is No) and keeps the preview open, so you can close the game and try again.
+
 - **Discontinued & Deprecation Review Filters:**  
   Cross-references installed add-ons against ESOUI's *Discontinued & Outdated* catalogued listings (e.g. `CritPercent`, `ESO-Database Export`, `MundusMap`), recommending cleanup when appropriate.
 
@@ -136,7 +142,7 @@ flowchart TD
 1. **Scan Folder:** Click **Scan folder** to catalogue all installed folders in your live add-on directory.
 2. **Check GitHub Releases:** Click **Check GitHub releases** to query publisher repositories for stable updates with downloadable asset archives.
 3. **Import ZIP:** For add-ons downloaded from publisher sites or ESOUI, click **Import ZIP…** and select the archive.
-4. **Inspect & Apply:** Review the package version against the installed version in the preview dialogue. Select eligible folders and click **Back up and apply**.
+4. **Inspect & Apply:** Review the package version against the installed version in the preview dialogue. Select eligible folders and click **Back up and apply**. If the game is running, you are asked to confirm first.
 5. **Review Outdated Add-ons:** Activate the **Review** filter to inspect deprecated listings, discontinued projects, or libraries with unmet version requirements.
 
 ---
@@ -146,7 +152,7 @@ flowchart TD
 Should an updated add-on cause an in-game issue or script error:
 1. Close *The Elder Scrolls Online* and any open add-on utilities.
 2. In the updater toolbar, click **Backups** to open the `Backups/` directory.
-3. Open the dated backup folder corresponding to the operation. Inspect `operation.json` to verify the modified folders.
+3. Open the dated backup folder corresponding to the operation. Inspect `operation.json`: it records the app version, confirms that `SavedVariables` was isolated, and lists each folder with its action and previous version (`Version` and `AddOnVersion`). Backups made before version 1.1.0 omit the first two fields and the previous `AddOnVersion`.
 4. Delete or move the problematic add-on folder out of your live `AddOns` directory.
 5. Copy the pristine original folder from the backup folder directly back into your live `AddOns` directory.
 6. Note: Character data and add-on configurations stored in `SavedVariables` remain untouched.
@@ -161,7 +167,7 @@ Should an updated add-on cause an in-game issue or script error:
   "addons_dir": "C:\\Users\\<username>\\Documents\\Elder Scrolls Online\\live\\Addons"
 }
 ```
-* **`addons_dir`** *(string)*: Absolute path to the active `AddOns` directory.
+* **`addons_dir`** *(string)*: Absolute path to the active `AddOns` directory. It must be the `AddOns` folder itself, not its parent (such as `live`); the updater refuses any other folder, and any path through `SavedVariables`.
 
 ### `release_sources.json`
 ```json

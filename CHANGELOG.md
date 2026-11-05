@@ -12,15 +12,25 @@ tag without the leading `v`.
 - Standard-library unit-test suite in `tests/` (`python -m unittest discover -s tests -v`),
   covering version comparison, repository and URL validation, manifest and dependency parsing,
   inventory scanning, ZIP validation, and the install, backup and rollback path.
+- SavedVariables firewall: scanning, previewing and installing refuse any folder that is not an
+  `AddOns` directory or that lies on a `SavedVariables` path, and backups cannot be written into
+  `SavedVariables`. A mis-set `addons_dir` now gives a clear message instead of silently scanning
+  the wrong folder.
+- A warning before applying a package while Elder Scrolls Online (`eso64.exe`) is running. The
+  default answer is No, and declining keeps the preview open.
 
 ### Changed
 
 - README: corrected the `config.json` example and path notation, stated the launcher's Python 3.11
   requirement, and listed `tests/` and `CHANGELOG.md` in the repository layout.
+- `operation.json` records now include `app_version`, `saved_variables` and each folder's
+  `previous_addon_version`. Records from earlier versions remain valid.
 
 ### Fixed
 
 - The window title and `User-Agent` header now report 1.0.1; the 1.0.1 release reported 1.0.
+- Optional dependencies (`OptionalDependsOn`) are now read, so the details pane lists them. The
+  field was always empty before because the scanner looked up the wrong key.
 
 ## [1.0.1] — 2026-11-05
 

@@ -77,18 +77,21 @@ Find code by symbol. Line numbers (v1.0.1) are hints only and drift with every e
 |---|---|
 | Constants, config | `VERSION` (35), `APP_DIR`, `CONFIG_FILE`, `BACKUP_DIR`, `SOURCES_FILE`, `resolve_addons_dir` (43), `ESOUI_PAGES`, `DISCONTINUED`, `VORTEX_MARKER`, `GITHUB_HOSTS` (104), `MAX_DOWNLOAD` (106) |
 | Records | frozen dataclasses `Addon` (110), `Release` (124), `PackageAddon` (432) |
-| Inventory (read-only) | `is_reparse`, `vortex_folders`, `manifest_fields`, `dependency_names`, `scan_addons` (183) |
+| Inventory (read-only) | `is_reparse`, `vortex_folders`, `manifest_fields`, `dependency_names`, `assert_addons_root`, `assert_backup_root`, `scan_addons` (183) |
 | GitHub | `normalize_repo`, `load_sources`/`save_sources`, `version_key`/`compare_versions`, `github_url`, `GitHubRedirects`, `github_open` (321), `github_json`, `latest_release` (342), `download_release` (387), `release_status` |
 | ZIP installer | `_zip_entries` (457, validation), `_zip_manifests`, `_plan_zip` (567), `inspect_zip`, `_zip_install_lock` (626), `_extract_zip_selection`, `_apply_zip_selection` (660), `install_zip` (738) |
-| UI | `UpdaterApp` (782), `PackagePreview` (1250), `main` (1317) |
+| UI | `is_eso_running`, `verify_game_closed`, `UpdaterApp` (782), `PackagePreview` (1250), `main` (1317) |
 
-**Install flow.** `PackagePreview.apply` → `UpdaterApp.install` → worker thread → `install_zip`:
-take the lock → plan again and compare with the preview → extract into a stage directory beside
+**Install flow.** `PackagePreview.apply` (game-running warning, UI thread) → `UpdaterApp.install` →
+worker thread → `install_zip`: refuse unsafe roots → take the lock → plan again and compare with
+the preview → extract into a stage directory beside
 AddOns → copy originals into `Backups/<YYYYMMDD-HHMMSS>-<random>/` → write `operation.json` →
 rename originals out and new folders in → roll back on any `OSError`.
 
-**`operation.json` (v1.0.1):** `{"addons_folder", "addons": [{"folder", "action", "previous_version"}]}`,
-where `action` is `Install` or `Update`. M1 extends it; see ROADMAP.
+**`operation.json`:** `{"addons_folder", "app_version", "saved_variables": "isolated", "addons":
+[{"folder", "action", "previous_version", "previous_addon_version"}]}`, where `action` is `Install`
+or `Update`. Records written before 1.1.0 lack `app_version`, `saved_variables` and
+`previous_addon_version`; a restore must still accept them.
 
 ### Threading model — the rule that matters most
 
@@ -97,14 +100,16 @@ where `action` is `Install` or `Update`. M1 extends it; see ROADMAP.
   calls `completed`, so `completed` may start the next `work()`.
 - `work()` silently returns if `busy` is set. Never call it where a dropped call would go unnoticed.
 - **Never touch Tk (messageboxes, widgets) inside `operation()`.** Confirmations go before `work()`
-  or inside `completed`.
+  or inside `completed`. `verify_game_closed` follows this rule: it runs on the UI thread from
+  `PackagePreview.apply`, and may block for up to five seconds if `tasklist` hangs.
 - `render_list()` calls `recommendations()` for every add-on on every filter change. Keep it pure
   and cheap: no I/O.
 
 ## Invariants — do not break these
 
 1. **SavedVariables is never modified, replaced, restored or backed up.** Character data sits
-   beside `AddOns`. M1 enforces this in code.
+   beside `AddOns`. `assert_addons_root` (scan, preview, install), `assert_backup_root` (install)
+   and the apply-step guard enforce it in code.
 2. **Back up before replacing.** Replace whole folders as units, stage on the same volume, roll
    back on failure. Never delete a live folder before its replacement is staged.
 3. **Never write to Vortex-managed folders** (`vortex.deployment.json`, `__folder_managed_by_vortex`)
