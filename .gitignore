@@ -1,0 +1,52 @@
+# ==============================================================================
+# ESO Addons Updater - Git Ignore Rules
+# ==============================================================================
+
+# Local User Configuration & Environment State (Must remain confidential)
+config.json
+config.json.tmp
+release_sources.json
+*.tmp
+*.bak
+*.orig
+
+# Addon Safety Backups (Generated locally when updating addons)
+Backups/
+
+# Python Bytecode, Caches, & Packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.manifest
+*.spec
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Editor & IDE Directories
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Windows System Artifacts
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Logs & Diagnostics
+*.log
+scratch/
