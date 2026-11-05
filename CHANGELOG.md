@@ -7,6 +7,22 @@ tag without the leading `v`.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-05
+
+### Added
+
+- In-app rollback dialog. The toolbar **Backups** button now opens a dialog that lists every
+  backup newest-first, shows each record's entries, and offers **Restore selected**, **Remove
+  newly installed folder…**, and **Open folder** actions. Both actions save a safety copy as a
+  new backup first, so they can themselves be undone.
+- New backup record verbs `Restore` and `Remove`, plus a `source_backup` field that names the
+  backup a restore or remove was taken from. Reading older records remains unchanged.
+
+### Changed
+
+- The **Backups** button opens the new dialog instead of Windows Explorer directly; the
+  dialog's **Open folder** button preserves the previous behaviour.
+
 ## [1.1.1] - 2026-11-05
 
 ### Added
@@ -86,7 +102,8 @@ Baseline release.
 - CustomTkinter interface that follows the system light/dark theme.
 - Proprietary licence and copyright notices.
 
-[Unreleased]: https://github.com/hawkers63/Addons-Updater/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/hawkers63/Addons-Updater/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/hawkers63/Addons-Updater/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/hawkers63/Addons-Updater/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hawkers63/Addons-Updater/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/hawkers63/Addons-Updater/compare/v1.0...v1.0.1

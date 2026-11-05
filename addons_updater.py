@@ -32,7 +32,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import customtkinter as ctk
 
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = APP_DIR / "config.json"
 DEFAULT_ADDONS_DIR = Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Addons"
@@ -830,6 +830,390 @@ def install_zip(
                 _clean_zip_stage(stage)
 
 
+# ROLLBACK SECTION
+@dataclass(frozen=True)
+class BackupEntry:
+    folder: str
+    action: str
+    previous_version: str = ""
+    previous_addon_version: str = ""
+
+
+@dataclass(frozen=True)
+class BackupOperation:
+    path: Path
+    timestamp: datetime
+    addons_folder: str
+    app_version: str
+    saved_variables: str
+    entries: tuple[BackupEntry, ...]
+    issue: str = ""
+
+
+def _parse_backup_timestamp(path: Path) -> datetime:
+    try:
+        return datetime.strptime(path.name[:15], "%Y%m%d-%H%M%S")
+    except ValueError:
+        return datetime.fromtimestamp(path.stat().st_mtime)
+
+
+def _read_backup_record(record_path: Path) -> tuple[dict, str]:
+    try:
+        text = record_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}, "No operation.json record: this backup cannot be restored."
+    except OSError as exc:
+        return {}, f"Could not read operation.json: {exc}"
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        return {}, f"operation.json is not valid JSON: {exc}"
+    if not isinstance(data, dict):
+        return {}, "operation.json must contain a JSON object."
+    return data, ""
+
+
+_INVALID_BACKUP_NAME = re.compile(r'[<>:"|?*\x00-\x1f/\\]')
+
+
+def _check_backup_folder_name(name: str) -> None:
+    if not name or name in {".", ".."} or name.endswith((".", " ")):
+        raise ValueError(f"Unsafe backup folder name: {name!r}")
+    if _INVALID_BACKUP_NAME.search(name):
+        raise ValueError(f"Unsafe backup folder name: {name!r}")
+    if PureWindowsPath(name).is_reserved():
+        raise ValueError(f"Unsafe backup folder name: {name!r}")
+    if name.casefold() == _SAVED_VARIABLES_NAME:
+        raise ValueError("SavedVariables is never restored. Character data is never modified.")
+
+
+def validate_restore(
+    operation: "BackupOperation", backup_root: Path, addons_root: Path,
+) -> tuple[BackupEntry, ...]:
+    """Pure check: filter the operation to the entries that may be restored safely.
+
+    Install entries are skipped (D4); they belong to the separate Remove newly installed folder
+    action. Raises ``ValueError`` with a user-facing message when the record is unsafe or
+    unusable. Never writes anything.
+    """
+    addons_root = assert_addons_root(addons_root)
+    assert_backup_root(backup_root, addons_root)
+    backup_root = _check_directory_path(backup_root)
+    if backup_root.is_relative_to(addons_root):
+        raise ValueError("Backup location must be outside the AddOns directory.")
+    if operation.issue:
+        raise ValueError(f"This backup cannot be restored: {operation.issue}")
+    try:
+        backup_path = _check_directory_path(operation.path)
+    except ValueError as exc:
+        raise ValueError(f"This backup cannot be restored: {exc}") from exc
+    if backup_path.parent != backup_root:
+        raise ValueError("Backup directory is outside the configured backup location.")
+    if not backup_path.is_dir():
+        raise ValueError("Backup directory is missing.")
+    if operation.addons_folder:
+        try:
+            recorded = Path(os.path.abspath(operation.addons_folder)).resolve()
+        except OSError:
+            recorded = Path(os.path.abspath(operation.addons_folder))
+        if str(recorded).casefold() != str(addons_root).casefold():
+            raise ValueError("This backup is for a different AddOns folder.")
+    if not operation.entries:
+        raise ValueError("This backup has no entries to restore.")
+    try:
+        deployed = vortex_folders(addons_root)
+    except (ValueError, OSError) as exc:
+        raise ValueError(f"Cannot verify Vortex-managed folders: {exc}") from exc
+    restorable: list[BackupEntry] = []
+    for entry in operation.entries:
+        _check_backup_folder_name(entry.folder)
+        if entry.action == "Install":
+            # Install records have no backup subfolder (nothing existed to copy).
+            continue
+        source = backup_path / entry.folder
+        try:
+            info = source.lstat()
+        except FileNotFoundError:
+            raise ValueError(f"Backup subfolder is missing: {entry.folder}")
+        if info.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise ValueError(f"Backup subfolder is a link: {entry.folder}")
+        if not (stat.S_ISDIR(info.st_mode)
+                or info.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY):
+            raise ValueError(f"Backup subfolder is not a directory: {entry.folder}")
+        live = addons_root / entry.folder
+        if is_reparse(live):
+            raise ValueError(f"Live folder {entry.folder} is a filesystem link.")
+        if entry.folder.casefold() in deployed:
+            raise ValueError(f"{entry.folder} is managed by Vortex. Review updates in Vortex.")
+        restorable.append(entry)
+    if not restorable:
+        if all(entry.action == "Install" for entry in operation.entries):
+            raise ValueError("This backup only records new installs. Use Remove newly installed "
+                             "folder to delete them.")
+        raise ValueError("Nothing in this backup can be restored.")
+    return tuple(restorable)
+
+
+def validate_remove(
+    operation: "BackupOperation", backup_root: Path, addons_root: Path,
+) -> tuple[BackupEntry, ...]:
+    """Filter the record to Install entries whose live folder is safe to remove. No writes."""
+    addons_root = assert_addons_root(addons_root)
+    assert_backup_root(backup_root, addons_root)
+    backup_root = _check_directory_path(backup_root)
+    if backup_root.is_relative_to(addons_root):
+        raise ValueError("Backup location must be outside the AddOns directory.")
+    if operation.issue:
+        raise ValueError(f"This backup cannot be used: {operation.issue}")
+    try:
+        backup_path = _check_directory_path(operation.path)
+    except ValueError as exc:
+        raise ValueError(f"This backup cannot be used: {exc}") from exc
+    if backup_path.parent != backup_root:
+        raise ValueError("Backup directory is outside the configured backup location.")
+    if not backup_path.is_dir():
+        raise ValueError("Backup directory is missing.")
+    if operation.addons_folder:
+        try:
+            recorded = Path(os.path.abspath(operation.addons_folder)).resolve()
+        except OSError:
+            recorded = Path(os.path.abspath(operation.addons_folder))
+        if str(recorded).casefold() != str(addons_root).casefold():
+            raise ValueError("This backup is for a different AddOns folder.")
+    if not operation.entries:
+        raise ValueError("This backup has no entries.")
+    try:
+        deployed = vortex_folders(addons_root)
+    except (ValueError, OSError) as exc:
+        raise ValueError(f"Cannot verify Vortex-managed folders: {exc}") from exc
+    removable: list[BackupEntry] = []
+    for entry in operation.entries:
+        if entry.action != "Install":
+            continue
+        _check_backup_folder_name(entry.folder)
+        live = addons_root / entry.folder
+        try:
+            info = live.lstat()
+        except FileNotFoundError:
+            raise ValueError(f"Nothing to remove: {entry.folder} is not installed.")
+        if info.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise ValueError(f"Live folder {entry.folder} is a filesystem link.")
+        if not (stat.S_ISDIR(info.st_mode)
+                or info.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY):
+            raise ValueError(f"Live {entry.folder} is not a directory.")
+        if entry.folder.casefold() in deployed:
+            raise ValueError(f"{entry.folder} is managed by Vortex. Review in Vortex.")
+        removable.append(entry)
+    if not removable:
+        raise ValueError("This backup has nothing newly installed to remove.")
+    return tuple(removable)
+
+
+def remove_install(
+    operation: "BackupOperation", backup_root: Path, addons_root: Path,
+) -> Path:
+    """Remove the Install folders in ``operation``, saving a safety copy. Returns the safety backup."""
+    addons_root = assert_addons_root(addons_root)
+    assert_backup_root(backup_root, addons_root)
+    backup_root = _check_directory_path(backup_root)
+    os.makedirs(backup_root, exist_ok=True)
+    with _zip_install_lock(backup_root):
+        rows = validate_remove(operation, backup_root, addons_root)
+        source_backup = _check_directory_path(operation.path)
+        stage = Path(tempfile.mkdtemp(prefix=".eso-addon-remove-", dir=addons_root.parent))
+        preserve_stage = False
+        try:
+            prefix = datetime.now().strftime("%Y%m%d-%H%M%S-")
+            new_backup = Path(tempfile.mkdtemp(prefix=prefix, dir=backup_root))
+            for row in rows:
+                shutil.copytree(addons_root / row.folder, new_backup / row.folder,
+                                symlinks=False)
+            _write_restore_record(new_backup / "operation.json", addons_root, rows,
+                                  source_backup.name, action="Remove")
+            originals = stage / "originals"
+            os.makedirs(originals)
+            moved = []
+            try:
+                for row in rows:
+                    folder = addons_root / row.folder
+                    original = originals / row.folder
+                    folder.rename(original)
+                    moved.append((original, folder))
+            except OSError as exc:
+                failures = []
+                for source, destination in reversed(moved):
+                    try:
+                        source.rename(destination)
+                    except OSError:
+                        failures.append(str(source))
+                if failures:
+                    raise _ZipRollbackError(
+                        f"A removal failed and some folders could not be moved back. "
+                        f"Originals may be in {originals}. The safety copy is in {new_backup}. "
+                        f"Could not move: {', '.join(failures)}"
+                    ) from exc
+                raise OSError(f"Remove failed and changes were rolled back: {exc}") from exc
+            return new_backup
+        except _ZipRollbackError:
+            preserve_stage = True
+            raise
+        finally:
+            if not preserve_stage:
+                _clean_zip_stage(stage)
+
+
+def _live_folder_versions(folder: Path) -> tuple[str, str]:
+    try:
+        stem = folder.name.casefold()
+        matches = {child.suffix.casefold(): child for child in folder.iterdir()
+                   if child.stem.casefold() == stem
+                   and child.suffix.casefold() in {".addon", ".txt"}}
+    except OSError:
+        return "", ""
+    preferred = matches.get(".addon") or matches.get(".txt")
+    if preferred is None:
+        return "", ""
+    try:
+        fields = manifest_fields(preferred)
+    except (OSError, ValueError):
+        return "", ""
+    return fields.get("version", ""), fields.get("addonversion", "")
+
+
+def _write_restore_record(
+    record_path: Path, addons_root: Path, rows: tuple[BackupEntry, ...],
+    source_backup_name: str, action: str,
+) -> None:
+    record = {
+        "addons_folder": str(addons_root),
+        "app_version": VERSION,
+        "saved_variables": "isolated",
+        "source_backup": source_backup_name,
+        "addons": [],
+    }
+    for row in rows:
+        previous_version, previous_addon_version = _live_folder_versions(
+            addons_root / row.folder)
+        record["addons"].append({
+            "folder": row.folder, "action": action,
+            "previous_version": previous_version,
+            "previous_addon_version": previous_addon_version,
+        })
+    record_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
+def _swap_restore_folders(
+    root: Path, rows: tuple[BackupEntry, ...], incoming: Path, stage: Path, new_backup: Path,
+) -> None:
+    deployed = vortex_folders(root)
+    for row in rows:
+        if row.folder.casefold() in deployed:
+            raise ValueError(f"{row.folder} is now managed by Vortex. Restore cancelled.")
+
+    originals = stage / "originals"
+    os.makedirs(originals)
+    moved = []
+    installed = []
+    try:
+        for row in rows:
+            folder = root / row.folder
+            if folder.exists():
+                original = originals / row.folder
+                folder.rename(original)
+                moved.append((original, folder))
+            source = incoming / row.folder
+            source.rename(folder)
+            installed.append((folder, source))
+    except OSError as exc:
+        failures = []
+        for source, destination in (*reversed(installed), *reversed(moved)):
+            try:
+                source.rename(destination)
+            except OSError:
+                failures.append(str(source))
+        if failures:
+            raise _ZipRollbackError(
+                f"A restore failed and some folders could not be moved back. Originals "
+                f"may be in {originals}. The safety copy is in {new_backup}. Could not "
+                f"move: {', '.join(failures)}"
+            ) from exc
+        raise OSError(f"Restore failed and changes were rolled back: {exc}") from exc
+
+
+def restore_backup(
+    operation: "BackupOperation", backup_root: Path, addons_root: Path,
+) -> Path:
+    """Replace live folders with the contents of ``operation``. Returns a new reversible backup."""
+    addons_root = assert_addons_root(addons_root)
+    assert_backup_root(backup_root, addons_root)
+    backup_root = _check_directory_path(backup_root)
+    os.makedirs(backup_root, exist_ok=True)
+    with _zip_install_lock(backup_root):
+        rows = validate_restore(operation, backup_root, addons_root)
+        source_backup = _check_directory_path(operation.path)
+        stage = Path(tempfile.mkdtemp(prefix=".eso-addon-restore-", dir=addons_root.parent))
+        preserve_stage = False
+        try:
+            incoming = stage / "incoming"
+            os.makedirs(incoming)
+            for row in rows:
+                shutil.copytree(source_backup / row.folder, incoming / row.folder,
+                                symlinks=False)
+            prefix = datetime.now().strftime("%Y%m%d-%H%M%S-")
+            new_backup = Path(tempfile.mkdtemp(prefix=prefix, dir=backup_root))
+            for row in rows:
+                live = addons_root / row.folder
+                if live.exists():
+                    shutil.copytree(live, new_backup / row.folder, symlinks=False)
+            _write_restore_record(new_backup / "operation.json", addons_root, rows,
+                                  source_backup.name, action="Restore")
+            _swap_restore_folders(addons_root, rows, incoming, stage, new_backup)
+            return new_backup
+        except _ZipRollbackError:
+            preserve_stage = True
+            raise
+        finally:
+            if not preserve_stage:
+                _clean_zip_stage(stage)
+
+
+def list_backups(backup_root: Path) -> tuple["BackupOperation", ...]:
+    """Return every readable backup beneath ``backup_root``, newest first."""
+    if not backup_root.is_dir():
+        return ()
+    results: list[BackupOperation] = []
+    for entry in backup_root.iterdir():
+        try:
+            info = entry.lstat()
+        except OSError:
+            continue
+        is_directory = bool(stat.S_ISDIR(info.st_mode)
+                            or info.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY)
+        if not is_directory:
+            continue
+        if info.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            continue
+        data, issue = _read_backup_record(entry / "operation.json")
+        raw_entries = data.get("addons") if isinstance(data.get("addons"), list) else []
+        entries = tuple(
+            BackupEntry(
+                folder=str(item.get("folder", "")),
+                action=str(item.get("action", "")),
+                previous_version=str(item.get("previous_version", "")),
+                previous_addon_version=str(item.get("previous_addon_version", "")),
+            )
+            for item in raw_entries if isinstance(item, dict) and item.get("folder")
+        )
+        results.append(BackupOperation(
+            path=entry,
+            timestamp=_parse_backup_timestamp(entry),
+            addons_folder=str(data.get("addons_folder") or ""),
+            app_version=str(data.get("app_version") or ""),
+            saved_variables=str(data.get("saved_variables") or ""),
+            entries=entries,
+            issue=issue,
+        ))
+    return tuple(sorted(results, key=lambda operation: operation.timestamp, reverse=True))
 
 
 
@@ -843,6 +1227,7 @@ class UpdaterApp(ctk.CTk):
         self.sources_error = ""
         self.selection = None
         self.preview = None
+        self.rollback = None
         self.busy = False
         self.api = None
         self.notice = ""
@@ -988,6 +1373,8 @@ class UpdaterApp(ctk.CTk):
             return
         if self.preview:
             self.preview.cancel()
+        if self.rollback:
+            self.rollback.close()
         self.destroy()
 
     def refresh(self):
@@ -1236,11 +1623,13 @@ class UpdaterApp(ctk.CTk):
             self.open_page(release.page if release else f"https://github.com/{repo}/releases")
 
     def open_backups(self):
-        def operation():
-            if not BACKUP_DIR.is_dir():
-                raise ValueError("No backup directory yet. It is created on the first install.")
-            os.startfile(BACKUP_DIR)
-        self.work(operation, lambda _: self.update_status(str(BACKUP_DIR)), "Opening backups…")
+        if self.rollback is not None:
+            try:
+                self.rollback.focus()
+            except Exception:
+                pass
+            return
+        self.rollback = RollbackDialog(self)
 
     def import_zip(self):
         path = filedialog.askopenfilename(
@@ -1301,6 +1690,231 @@ class UpdaterApp(ctk.CTk):
             self.update_status(f"{detail}  ·  {notice}" if notice else detail)
 
         self.work(operation, completed, "Backing up and applying the selected folders…")
+
+
+class RollbackDialog(ctk.CTkToplevel):
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Backups")
+        self.geometry("760x520")
+        self.minsize(620, 360)
+        self.transient(app)
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.grid_columnconfigure(0, weight=3)
+        self.grid_columnconfigure(1, weight=4)
+        self.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(
+            self, text="Select a backup to review its entries.",
+            anchor="w", justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 6))
+        self.rows = ctk.CTkScrollableFrame(self)
+        self.rows.grid(row=1, column=0, sticky="nsew", padx=(16, 4), pady=4)
+        self.rows.grid_columnconfigure(0, weight=1)
+        self.details = ctk.CTkTextbox(self, wrap="word")
+        self.details.grid(row=1, column=1, sticky="nsew", padx=(4, 16), pady=4)
+        self.details.configure(state="disabled")
+
+        buttons = ctk.CTkFrame(self, fg_color="transparent")
+        buttons.grid(row=2, column=0, columnspan=2, sticky="e", padx=16, pady=10)
+        self.restore_button = ctk.CTkButton(buttons, text="Restore selected",
+                                            command=self.restore, width=150)
+        self.restore_button.pack(side="left", padx=4)
+        self.remove_button = ctk.CTkButton(buttons, text="Remove newly installed folder…",
+                                           command=self.remove_installed, width=220)
+        self.remove_button.pack(side="left", padx=4)
+        self.open_button = ctk.CTkButton(buttons, text="Open folder",
+                                         command=self.open_folder, width=110)
+        self.open_button.pack(side="left", padx=4)
+        ctk.CTkButton(buttons, text="Close", command=self.close, width=78).pack(side="left", padx=4)
+
+        self.backups: tuple[BackupOperation, ...] = ()
+        self.row_buttons: dict[str, ctk.CTkButton] = {}
+        self.selection: str | None = None
+        self.refresh_list()
+        self.after(0, self.grab_set)
+
+    def refresh_list(self):
+        for button in self.row_buttons.values():
+            button.destroy()
+        self.row_buttons.clear()
+        try:
+            self.backups = list_backups(BACKUP_DIR)
+        except OSError as exc:
+            self.app.show_error("Backups", str(exc))
+            self.backups = ()
+        if not self.backups:
+            self.details.configure(state="normal")
+            self.details.delete("1.0", "end")
+            self.details.insert("1.0", "No backups yet. They are created on the first install.")
+            self.details.configure(state="disabled")
+            self.update_buttons()
+            return
+        for index, operation in enumerate(self.backups):
+            label = f"{operation.timestamp:%Y-%m-%d %H:%M}  ·  {self._summary(operation)}"
+            button = ctk.CTkButton(
+                self.rows, text=label, anchor="w", height=30,
+                fg_color="transparent",
+                command=lambda name=operation.path.name: self.select(name),
+            )
+            button.grid(row=index, column=0, sticky="ew", pady=1)
+            self.row_buttons[operation.path.name] = button
+        self.select(self.backups[0].path.name)
+
+    @staticmethod
+    def _summary(operation: "BackupOperation") -> str:
+        if operation.issue:
+            return "unreadable"
+        counts: dict[str, int] = {}
+        for entry in operation.entries:
+            counts[entry.action] = counts.get(entry.action, 0) + 1
+        return ", ".join(f"{count} {action.lower()}{'s' if count != 1 else ''}"
+                         for action, count in sorted(counts.items())) or "empty"
+
+    def select(self, name: str) -> None:
+        self.selection = name
+        for folder, button in self.row_buttons.items():
+            button.configure(fg_color=("gray76", "gray28") if folder == name else "transparent")
+        self.render_details()
+        self.update_buttons()
+
+    def selected_operation(self) -> "BackupOperation | None":
+        return next((item for item in self.backups if item.path.name == self.selection), None)
+
+    def render_details(self) -> None:
+        operation = self.selected_operation()
+        self.details.configure(state="normal")
+        self.details.delete("1.0", "end")
+        if operation is None:
+            self.details.configure(state="disabled")
+            return
+        lines = [operation.path.name,
+                 f"Recorded  {operation.timestamp:%Y-%m-%d %H:%M:%S}"]
+        if operation.app_version:
+            lines.append(f"Updater version  {operation.app_version}")
+        if operation.addons_folder:
+            lines.append(f"AddOns folder  {operation.addons_folder}")
+        if operation.issue:
+            lines.append("")
+            lines.append(operation.issue)
+        else:
+            lines.append("")
+            for entry in operation.entries:
+                part = f"  · {entry.action}  {entry.folder}"
+                if entry.previous_version:
+                    part += f"  (was {entry.previous_version})"
+                lines.append(part)
+        self.details.insert("1.0", "\n".join(lines))
+        self.details.configure(state="disabled")
+
+    def update_buttons(self) -> None:
+        operation = self.selected_operation()
+        busy = self.app.busy
+        has_update = bool(operation and not operation.issue
+                          and any(entry.action == "Update" for entry in operation.entries))
+        has_install = bool(operation and not operation.issue
+                           and any(entry.action == "Install" for entry in operation.entries))
+        self.restore_button.configure(state="normal" if has_update and not busy else "disabled")
+        self.remove_button.configure(state="normal" if has_install and not busy else "disabled")
+        self.open_button.configure(state="normal" if operation is not None and not busy
+                                   else "disabled")
+
+    def open_folder(self) -> None:
+        operation = self.selected_operation()
+        target = operation.path if operation else BACKUP_DIR
+        try:
+            if not target.is_dir():
+                raise ValueError("The backup folder is no longer present.")
+            os.startfile(target)
+        except (OSError, ValueError) as exc:
+            self.app.show_error("Open folder", str(exc))
+
+    def restore(self) -> None:
+        operation = self.selected_operation()
+        if operation is None or self.app.busy:
+            return
+        try:
+            rows = validate_restore(operation, BACKUP_DIR, self.app.root)
+        except ValueError as exc:
+            messagebox.showerror("Cannot restore", str(exc), parent=self)
+            return
+        skipped = [entry.folder for entry in operation.entries if entry.action == "Install"]
+        lines = ["These folders will be restored to their state at the time of the backup:"]
+        lines.extend(f"  · {entry.folder}  (was {entry.previous_version or 'unknown'})"
+                     for entry in rows)
+        lines.append("")
+        lines.append("A safety copy of the current live folders will be saved as a new backup, "
+                     "so this restore can itself be undone.")
+        if skipped:
+            lines.append("")
+            lines.append("These newly-installed folders are NOT restored "
+                         "(use Remove newly installed folder…):")
+            lines.extend(f"  · {name}" for name in skipped)
+        if not messagebox.askokcancel("Restore from backup", "\n".join(lines), parent=self):
+            return
+        self._run_worker(
+            lambda: self._operation_restore(operation),
+            "Restoring from backup…",
+        )
+
+    def remove_installed(self) -> None:
+        operation = self.selected_operation()
+        if operation is None or self.app.busy:
+            return
+        try:
+            rows = validate_remove(operation, BACKUP_DIR, self.app.root)
+        except ValueError as exc:
+            messagebox.showerror("Cannot remove", str(exc), parent=self)
+            return
+        lines = ["These newly-installed folders will be removed. A safety copy is saved as a "
+                 "new backup first."]
+        lines.extend(f"  · {entry.folder}" for entry in rows)
+        if not messagebox.askokcancel("Remove newly installed folders", "\n".join(lines),
+                                      parent=self):
+            return
+        self._run_worker(
+            lambda: self._operation_remove(operation),
+            "Removing newly installed folders…",
+        )
+
+    def _operation_restore(self, operation: "BackupOperation"):
+        new_backup = restore_backup(operation, BACKUP_DIR, self.app.root)
+        addons, notice = scan_addons(self.app.root)
+        return "Restored from backup. Safety copy", new_backup, addons, notice
+
+    def _operation_remove(self, operation: "BackupOperation"):
+        new_backup = remove_install(operation, BACKUP_DIR, self.app.root)
+        addons, notice = scan_addons(self.app.root)
+        return "Removed newly installed folders. Safety copy", new_backup, addons, notice
+
+    def _run_worker(self, operation, status):
+        def completed(result):
+            verb, new_backup, addons, notice = result
+            self.app.addons = addons
+            self.app.notice = notice
+            self.app.render_list()
+            detail = f"{verb}  {new_backup}"
+            self.app.update_status(f"{detail}  ·  {notice}" if notice else detail)
+
+        self.app.work(operation, completed, status)
+        self.update_buttons()
+        self._watch_busy()
+
+    def _watch_busy(self) -> None:
+        if self.app.busy:
+            self.after(150, self._watch_busy)
+            return
+        try:
+            self.refresh_list()
+        except Exception as exc:
+            self.app.show_error("Backups", str(exc))
+
+    def close(self) -> None:
+        if self.app.busy:
+            self.bell()
+            return
+        self.app.rollback = None
+        self.destroy()
 
 
 class PackagePreview(ctk.CTkToplevel):

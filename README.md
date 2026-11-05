@@ -149,13 +149,42 @@ flowchart TD
 
 ## 6. Restoration & Rollback Guide
 
-Should an updated add-on cause an in-game issue or script error:
-1. Close *The Elder Scrolls Online* and any open add-on utilities.
-2. In the updater toolbar, click **Backups** to open the `Backups/` directory.
-3. Open the dated backup folder corresponding to the operation. Inspect `operation.json`: it records the app version, confirms that `SavedVariables` was isolated, and lists each folder with its action and previous version (`Version` and `AddOnVersion`). Backups made before version 1.1.0 omit the first two fields and the previous `AddOnVersion`.
-4. Delete or move the problematic add-on folder out of your live `AddOns` directory.
-5. Copy the pristine original folder from the backup folder directly back into your live `AddOns` directory.
-6. Note: Character data and add-on configurations stored in `SavedVariables` remain untouched.
+Should an updated add-on cause an in-game issue or script error, use the in-app **Backups**
+dialog. The manual steps below are a fallback for older records or offline recovery.
+
+### 6.1 In-app rollback (recommended)
+
+1. In the updater toolbar, click **Backups**. The dialog lists every backup newest-first, each
+   labelled with its timestamp and a summary of its entries (for example *2 updates, 1 install*).
+2. Select a backup on the left. The right-hand pane shows the record: the updater version that
+   wrote it, the AddOns folder it was taken from, and the folders it touched with their previous
+   `Version`.
+3. Choose an action:
+   * **Restore selected** — reverts the `Update` entries to the versions in the backup. Any
+     `Install` entries in the same record are skipped (they are listed in the confirmation so
+     you know what will stay). Before any files move, a safety copy of the current live folders
+     is written as a new `Restore` backup, so the restore can itself be undone.
+   * **Remove newly installed folder…** — removes the folders introduced by an `Install` record,
+     after saving a safety copy as a new `Remove` backup.
+   * **Open folder** — opens the selected backup in Windows Explorer for direct inspection.
+4. Character data and add-on configurations stored in `SavedVariables` are never read or written
+   by either action.
+
+### 6.2 Manual fallback
+
+If the in-app dialog cannot reach a backup (for example an older record missing
+`operation.json`, or a backup copied in from another machine):
+
+1. In the updater toolbar, click **Backups**, then click **Open folder** (or open the
+   `Backups/` directory in Windows Explorer).
+2. Open the dated backup folder corresponding to the operation. Inspect `operation.json`: it
+   records the app version, confirms that `SavedVariables` was isolated, and lists each folder
+   with its action and previous version (`Version` and `AddOnVersion`). Backups made before
+   version 1.1.0 omit the first two fields and the previous `AddOnVersion`.
+3. Delete or move the problematic add-on folder out of your live `AddOns` directory.
+4. Copy the pristine original folder from the backup folder directly back into your live
+   `AddOns` directory.
+5. Character data and add-on configurations stored in `SavedVariables` remain untouched.
 
 ---
 
