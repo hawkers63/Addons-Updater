@@ -58,3 +58,7 @@ icon/
 # Local planning and session memory (keep off remote)
 ROADMAP.md
 MEMORY.md
+
+# Local assistant guide and unit tests (keep off remote)
+CLAUDE.md
+tests/

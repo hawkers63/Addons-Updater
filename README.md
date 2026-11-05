@@ -59,7 +59,6 @@ While community tools such as Minion serve general catalogue updates, modern add
 ```text
 C:\Addons Updater\
 ├── addons_updater.py             # Core Python application and UI engine
-├── tests\                        # Standard-library unittest suite
 ├── config.example.json           # Generic configuration schema template
 ├── release_sources.example.json  # Publisher GitHub source mapping template
 ├── requirements-updater.txt      # Python runtime dependencies

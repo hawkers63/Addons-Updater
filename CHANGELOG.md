@@ -7,6 +7,12 @@ tag without the leading `v`.
 
 ## [Unreleased]
 
+### Removed
+
+- CLAUDE.md and 	ests/ are no longer published; both stay local through .gitignore.
+  Repository commits, pushes and GitHub releases are handled by Steve (Grok Bot).
+
+
 ### Added
 
 - Standard-library unit-test suite in `tests/` (`python -m unittest discover -s tests -v`),
