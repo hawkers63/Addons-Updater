@@ -695,6 +695,8 @@ def _extract_zip_selection(
 def _apply_zip_selection(
     root: Path, rows: tuple[PackageAddon, ...], incoming: Path, stage: Path, backup: Path,
 ) -> None:
+    if any(row.name.casefold() == _SAVED_VARIABLES_NAME for row in rows):
+        raise ValueError("Refusing to write a SavedVariables folder.")
     originals = stage / "originals"
     os.makedirs(originals, exist_ok=True)
     for row in rows:
@@ -705,8 +707,15 @@ def _apply_zip_selection(
             shutil.copytree(folder, backup / row.name, symlinks=True)
     record = {
         "addons_folder": str(root),
+        "app_version": VERSION,
+        "saved_variables": "isolated",
         "addons": [
-            {"folder": row.name, "action": row.action, "previous_version": row.installed_version}
+            {
+                "folder": row.name,
+                "action": row.action,
+                "previous_version": row.installed_version,
+                "previous_addon_version": row.installed_addon_version,
+            }
             for row in rows
         ],
     }

@@ -48,7 +48,10 @@ class InstallZipTests(SandboxCase):
         self.assertRegex(backup.name, r"^\d{8}-\d{6}-")
         self.assertEqual(self.record(backup), {
             "addons_folder": str(self.addons),
-            "addons": [{"folder": "Fresh", "action": "Install", "previous_version": ""}],
+            "app_version": app.VERSION,
+            "saved_variables": "isolated",
+            "addons": [{"folder": "Fresh", "action": "Install", "previous_version": "",
+                        "previous_addon_version": ""}],
         })
         self.assertEqual([path.name for path in backup.iterdir()], ["operation.json"])
         self.assertEqual(self.stages(), [])
@@ -65,8 +68,12 @@ class InstallZipTests(SandboxCase):
         saved = backup / "Alpha"
         self.assertTrue((saved / "stale.lua").is_file())
         self.assertIn("## Version: 1.0", (saved / "Alpha.txt").read_text(encoding="utf-8"))
-        self.assertEqual(self.record(backup)["addons"],
-                         [{"folder": "Alpha", "action": "Update", "previous_version": "1.0"}])
+        record = self.record(backup)
+        self.assertEqual(record["addons"], [{"folder": "Alpha", "action": "Update",
+                                             "previous_version": "1.0",
+                                             "previous_addon_version": "1"}])
+        self.assertEqual((record["app_version"], record["saved_variables"]),
+                         (app.VERSION, "isolated"))
         self.assertEqual(self.stages(), [])
         self.assert_saved_variables_untouched()
 
@@ -152,3 +159,21 @@ class InstallZipTests(SandboxCase):
                 app.install_zip(zip_path, self.addons, self.backups, rows, ("Fresh",))
         self.assertFalse((self.addons / "Fresh").exists())
         self.assertEqual(self.stages(), [])
+
+
+class ApplyGuardTests(SandboxCase):
+    """Belt and braces: even a forged plan row cannot make the apply step write SavedVariables."""
+
+    def test_a_savedvariables_row_is_refused_before_any_write(self):
+        incoming, stage, backup = (self.tmp / part for part in ("incoming", "stage", "backup"))
+        for folder in (incoming, stage, backup):
+            folder.mkdir()
+        for name in ("SavedVariables", "savedvariables"):
+            with self.subTest(name=name):
+                row = app.PackageAddon(name, "1", "1", "Install", "", "", "", (name,), (), b"")
+                with self.assertRaisesRegex(ValueError, "SavedVariables"):
+                    app._apply_zip_selection(self.addons, (row,), incoming, stage, backup)
+                self.assertEqual(list(stage.iterdir()), [])
+                self.assertEqual(list(backup.iterdir()), [])
+        self.assertEqual(list(self.addons.iterdir()), [])
+        self.assert_saved_variables_untouched()
