@@ -52,10 +52,6 @@ While community tools such as Minion serve general catalogue updates, modern add
 
 ```text
 C:\Addons Updater\
-├── icon\                         # Application icon resources
-├── notes\                        # Design specifications and release notes
-│   ├── 00.md                     # Architecture overview and requirements
-│   └── 01.md                     # User operational handbook and update steps
 ├── addons_updater.py             # Core Python application and UI engine
 ├── config.example.json           # Generic configuration schema template
 ├── release_sources.example.json  # Publisher GitHub source mapping template
@@ -68,7 +64,7 @@ C:\Addons Updater\
 ### Configuration Files (Local State)
 
 Local machine paths and private source mappings are sanitised from version control via `.gitignore`:
-- `config.json`: Defines the local ESO AddOns path on disk (e.g. `F:\Documents\Elder Scrolls Online\live\Addons`).
+- `config.json`: Defines the local ESO AddOns path on disk (e.g. `C:\\Users\\<username>\\Documents\\Elder Scrolls Online\\live\\Addons`).
 - `release_sources.json`: Stores user-mapped custom GitHub repositories for specific add-ons.
 - `Backups/`: Contains local timestamped backups and `operation.json` snapshots.
 
@@ -160,7 +156,7 @@ Should an updated add-on cause an in-game issue or script error:
 ### `config.json`
 ```json
 {
-  "addons_dir": "F:\\Documents\\Elder Scrolls Online\\live\\Addons"
+  "addons_dir": "C:\\\\Users\\\\<username>\\\\Documents\\\\Elder Scrolls Online\\\\live\\\\Addons"
 }
 ```
 * **`addons_dir`** *(string)*: Absolute path to the active `AddOns` directory.
@@ -178,7 +174,7 @@ Should an updated add-on cause an in-game issue or script error:
 
 ## 8. Copyright & Proprietary Licence
 
-**Copyright (c) 2026 hawkers63. All Rights Reserved.**
+**Proprietary — Copyright (c) 2026 Mark Hawksworth (hawkers63). All Rights Reserved.**
 
 This software, including source code, design architecture, and documentation, is proprietary intellectual property. Unauthorised copying, distribution, modification, public display, reverse engineering, or commercial use without prior written consent is strictly prohibited.
 

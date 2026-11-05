@@ -50,3 +50,7 @@ $RECYCLE.BIN/
 # Logs & Diagnostics
 *.log
 scratch/
+
+# Local design notes and icon assets (keep off remote)
+notes/
+icon/

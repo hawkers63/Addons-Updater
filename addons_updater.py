@@ -1,6 +1,6 @@
 # ==============================================================================
 # ESO Addons Updater
-# Copyright (c) 2026 hawkers63. All Rights Reserved.
+# Proprietary — Copyright (c) 2026 Mark Hawksworth (hawkers63). All Rights Reserved.
 #
 # This software and associated documentation files are proprietary and confidential.
 # Unauthorised copying, distribution, modification, reproduction, or commercial
@@ -35,7 +35,7 @@ import customtkinter as ctk
 VERSION = "1.0"
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = APP_DIR / "config.json"
-DEFAULT_ADDONS_DIR = Path(r"F:\Documents\Elder Scrolls Online\live\Addons")
+DEFAULT_ADDONS_DIR = Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Addons"
 BACKUP_DIR = APP_DIR / "Backups"
 SOURCES_FILE = APP_DIR / "release_sources.json"
 
