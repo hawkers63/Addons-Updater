@@ -7,6 +7,34 @@ tag without the leading `v`.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-06
+
+### Added
+
+- Review-grade dependency audit. The **Review** filter now lists each add-on's hard
+  dependencies that are missing from the inventory by folder name, and reports
+  `AddOnVersion` shortfalls against `DependsOn >= N` minimums on both sides of the pair:
+  the consumer sees "Needs *Provider* AddOnVersion ≥ *N* (installed *M*).", and the
+  provider sees "Required by *Consumer* at AddOnVersion ≥ *N*…". An external provider
+  (Vortex) adds an "Update that folder in Vortex." / "Update it in Vortex." hint.
+- Review wording for manifests whose declared `APIVersion` range is only *newer* than
+  the live game API: "The manifest declares only a newer game API than this client.
+  ESO usually will not load it until the game is updated." A live API inside the
+  declared range now produces no warning at all; the previous "older game API" line
+  still fires when the highest declaration is below the live client.
+
+### Changed
+
+- Vortex-managed add-on folders are now parsed read-only during a scan, so their
+  `Version`, `AddOnVersion`, `APIVersion`, `DependsOn` and `OptionalDependsOn` fields
+  take part in the dependency audit. These folders remain externally managed, the
+  "Managed by Vortex. Review updates in Vortex." note is unchanged, and no write path
+  is ever opened on them. Linked folders and linked manifests stay unread.
+- Detail pane no longer duplicates the Review dependency prose. The factual
+  "Required add-ons", "Optional add-ons" and "Required by" lines stay; the earlier
+  "Missing by folder name" line and the "Dependency needs update" loop are removed
+  because the Review block below already surfaces the same information in one voice.
+
 ## [1.2.0] - 2026-11-05
 
 ### Added
@@ -102,7 +130,8 @@ Baseline release.
 - CustomTkinter interface that follows the system light/dark theme.
 - Proprietary licence and copyright notices.
 
-[Unreleased]: https://github.com/hawkers63/Addons-Updater/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/hawkers63/Addons-Updater/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/hawkers63/Addons-Updater/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/hawkers63/Addons-Updater/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/hawkers63/Addons-Updater/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hawkers63/Addons-Updater/compare/v1.0.1...v1.1.0

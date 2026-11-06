@@ -32,7 +32,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import customtkinter as ctk
 
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = APP_DIR / "config.json"
 DEFAULT_ADDONS_DIR = Path.home() / "Documents" / "Elder Scrolls Online" / "live" / "Addons"
@@ -238,19 +238,17 @@ def scan_addons(root: Path) -> tuple[tuple[Addon, ...], str]:
                 continue
             external = (folder.name.casefold() in deployed
                         or (folder / VORTEX_MARKER).exists())
-            if external:
-                addons.append(Addon(folder.name, folder.name,
-                                    issue="Managed by Vortex. Review updates in Vortex.",
-                                    external=True))
-                continue
+            vortex_issue = "Managed by Vortex. Review updates in Vortex."
             stem = folder.name.casefold()
             matches = {child.suffix.casefold(): child for child in folder.iterdir()
                        if child.stem.casefold() == stem
                        and child.suffix.casefold() in {".addon", ".txt"}}
             preferred = matches.get(".addon") or matches.get(".txt")
             if preferred is None:
-                addons.append(Addon(folder.name, folder.name,
-                                    issue="No matching ESO manifest. Check the folder layout."))
+                issue = vortex_issue if external else (
+                    "No matching ESO manifest. Check the folder layout.")
+                addons.append(Addon(folder.name, folder.name, issue=issue,
+                                    external=external))
                 continue
             if is_reparse(preferred):
                 addons.append(Addon(folder.name, folder.name, issue="Linked manifest.",
@@ -261,13 +259,14 @@ def scan_addons(root: Path) -> tuple[tuple[Addon, ...], str]:
                 r"([^\s<>=,]+)>=(\d{1,9})(?=\s|,|$)",
                 f"{fields.get('dependson', '')} {fields.get('pcdependson', '')}",
             ))
-            issue = ""
+            issue = vortex_issue if external else ""
             if ".addon" in matches and ".txt" in matches and not is_reparse(matches[".txt"]):
                 legacy = manifest_fields(matches[".txt"])
                 if any(legacy.get(key) != fields.get(key)
                        for key in ("version", "addonversion", "apiversion")):
-                    issue = ("The .addon and .txt manifests disagree. Compare with a "
-                             "publisher ZIP before removing an obsolete file.")
+                    disagreement = ("The .addon and .txt manifests disagree. Compare with a "
+                                    "publisher ZIP before removing an obsolete file.")
+                    issue = f"{issue} {disagreement}".strip() if issue else disagreement
             title = re.sub(r"\|c[0-9a-fA-F]{6}|\|r", "", fields.get("title", ""))
             api = tuple(int(token) for token in fields.get("apiversion", "").split()[:2]
                         if re.fullmatch(r"[0-9]{1,9}", token))
@@ -275,12 +274,67 @@ def scan_addons(root: Path) -> tuple[tuple[Addon, ...], str]:
                 folder.name, title or folder.name, fields.get("version", ""),
                 fields.get("addonversion", ""), api,
                 dependency_names(fields, "dependson", "pcdependson"),
-                dependency_names(fields, "optionaldependson", "pcoptionaldependson"), issue,
-                minimums=minimums,
+                dependency_names(fields, "optionaldependson", "pcoptionaldependson"),
+                issue, external=external, minimums=minimums,
             ))
         except (OSError, ValueError) as exc:
             addons.append(Addon(folder.name, folder.name, issue=f"Cannot read folder: {exc}"))
     return tuple(addons), notice
+
+
+@dataclass(frozen=True)
+class DependencyShortfall:
+    """An installed library below a hard ``>=`` AddOnVersion requirement."""
+
+    provider: str
+    required_by: str
+    required: int
+    installed: str
+    provider_external: bool
+
+
+def dependency_shortfalls(addons: tuple[Addon, ...]) -> tuple[DependencyShortfall, ...]:
+    """Collect hard-dependency AddOnVersion shortfalls across the installed add-ons.
+
+    Optional dependencies are ignored; a missing provider folder is reported by the
+    caller as a missing hard dependency, not as a shortfall. Non-integer AddOnVersion
+    values are skipped, matching the comparison the detail pane already uses.
+    """
+    installed = {addon.name.casefold(): addon for addon in addons}
+    found = []
+    seen = set()
+    for consumer in addons:
+        for name, required in consumer.minimums:
+            provider = installed.get(name.casefold())
+            if provider is None:
+                continue
+            current = provider.addon_version
+            if not re.fullmatch(r"[0-9]{1,9}", current) or int(current) >= required:
+                continue
+            key = (provider.name.casefold(), consumer.name.casefold(), required)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(DependencyShortfall(
+                provider.name, consumer.name, required, current, provider.external,
+            ))
+    return tuple(found)
+
+
+def index_shortfalls(
+    addons: tuple[Addon, ...],
+) -> tuple[dict[str, tuple[DependencyShortfall, ...]],
+           dict[str, tuple[DependencyShortfall, ...]]]:
+    """Index shortfalls by the consumer folder and by the provider folder."""
+    by_consumer: dict[str, list[DependencyShortfall]] = {}
+    by_provider: dict[str, list[DependencyShortfall]] = {}
+    for item in dependency_shortfalls(addons):
+        by_consumer.setdefault(item.required_by.casefold(), []).append(item)
+        by_provider.setdefault(item.provider.casefold(), []).append(item)
+    return (
+        {key: tuple(value) for key, value in by_consumer.items()},
+        {key: tuple(value) for key, value in by_provider.items()},
+    )
 
 
 def normalize_repo(value: str) -> str:
@@ -1234,6 +1288,8 @@ class UpdaterApp(ctk.CTk):
         self.filter_job = None
         self.row_buttons = {}
         self.asset_by_label = {}
+        self.shortfall_by_consumer: dict[str, tuple[DependencyShortfall, ...]] = {}
+        self.shortfall_by_provider: dict[str, tuple[DependencyShortfall, ...]] = {}
 
         self.title(f"ESO Addons Updater {VERSION}")
         self.geometry("1160x730")
@@ -1380,13 +1436,16 @@ class UpdaterApp(ctk.CTk):
     def refresh(self):
         def operation():
             addons, notice = scan_addons(self.root)
+            indexes = index_shortfalls(addons)
             try:
-                return addons, notice, load_sources(), ""
+                return addons, notice, load_sources(), "", indexes
             except (ValueError, OSError) as exc:
-                return addons, notice, DEFAULT_SOURCES.copy(), str(exc)
+                return addons, notice, DEFAULT_SOURCES.copy(), str(exc), indexes
 
         def completed(result):
-            self.addons, self.notice, self.sources, self.sources_error = result
+            (self.addons, self.notice, self.sources,
+             self.sources_error, indexes) = result
+            self.shortfall_by_consumer, self.shortfall_by_provider = indexes
             self.releases = {repo: release for repo, release in self.releases.items()
                              if repo in self.sources.values()}
             self.render_list()
@@ -1418,8 +1477,30 @@ class UpdaterApp(ctk.CTk):
             manager = " in Vortex" if addon.external else ""
             reasons.append("The linked ESOUI listing marks this edition Discontinued & Outdated. "
                            f"Consider removing it{manager} if you no longer use it.")
-        if addon.api and self.api and max(addon.api) < self.api:
-            reasons.append("The manifest declares an older game API. Check compatibility in ESO.")
+        if addon.api and self.api:
+            low, high = min(addon.api), max(addon.api)
+            if high < self.api:
+                reasons.append(
+                    "The manifest declares an older game API. Check compatibility in ESO.")
+            elif low > self.api:
+                reasons.append(
+                    "The manifest declares only a newer game API than this client. "
+                    "ESO usually will not load it until the game is updated.")
+        installed = {item.name.casefold() for item in self.addons}
+        missing = [name for name in addon.depends if name.casefold() not in installed]
+        if missing:
+            reasons.append(
+                "Missing required add-ons by folder name: " + ", ".join(missing) + ".")
+        for item in self.shortfall_by_consumer.get(key, ()):
+            where = " Update that folder in Vortex." if item.provider_external else ""
+            reasons.append(
+                f"Needs {item.provider} AddOnVersion ≥ {item.required} "
+                f"(installed {item.installed}).{where}")
+        for item in self.shortfall_by_provider.get(key, ()):
+            where = " Update it in Vortex." if item.provider_external else ""
+            reasons.append(
+                f"Required by {item.required_by} at AddOnVersion ≥ {item.required} "
+                f"(installed {item.installed}).{where}")
         release = self.release_for(addon)
         if release and release.archived and not addon.external:
             reasons.append("The GitHub source is archived. Check for a maintained successor.")
@@ -1487,8 +1568,6 @@ class UpdaterApp(ctk.CTk):
             key = addon.name.casefold()
             self.esoui_button.configure(text="ESOUI listing" if key in ESOUI_PAGES
                                         else "Find on ESOUI via Google")
-            installed = {item.name.casefold(): item for item in self.addons}
-            missing = [name for name in addon.depends if name.casefold() not in installed]
             used_by = [item.name for item in self.addons
                        if any(name.casefold() == key for name in item.depends)]
             lines = [
@@ -1509,14 +1588,6 @@ class UpdaterApp(ctk.CTk):
                     lines.append("Use the ESOUI listing or Minion to find the publisher’s latest release.")
             if addon.depends:
                 lines.append(f"\nRequired add-ons  {', '.join(addon.depends)}")
-            if missing:
-                lines.append(f"Missing by folder name  {', '.join(missing)}")
-            for name, required in addon.minimums:
-                dependency = installed.get(name.casefold())
-                if dependency and re.fullmatch(r"[0-9]{1,9}", dependency.addon_version):
-                    if int(dependency.addon_version) < required:
-                        lines.append(f"Dependency needs update  {name} ≥ {required} "
-                                     f"(installed {dependency.addon_version})")
             if addon.optional:
                 lines.append(f"Optional add-ons  {', '.join(addon.optional)}")
             if used_by:
@@ -1675,16 +1746,17 @@ class UpdaterApp(ctk.CTk):
                 try:
                     addons, notice = scan_addons(self.root)
                 except (OSError, ValueError) as exc:
-                    return backup, None, f"Rescan failed: {exc}"
-                return backup, addons, notice
+                    return backup, None, f"Rescan failed: {exc}", ({}, {})
+                return backup, addons, notice, index_shortfalls(addons)
             finally:
                 if temporary:
                     temporary.cleanup()
 
         def completed(result):
-            backup, addons, notice = result
+            backup, addons, notice, indexes = result
             if addons is not None:
                 self.addons, self.notice = addons, notice
+                self.shortfall_by_consumer, self.shortfall_by_provider = indexes
                 self.render_list()
             detail = f"Folders changed  {len(selected)}  ·  Backup record  {backup}"
             self.update_status(f"{detail}  ·  {notice}" if notice else detail)

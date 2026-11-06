@@ -17,7 +17,7 @@
 
 While community tools such as Minion serve general catalogue updates, modern add-on management presents unique challenges:
 - **Terms-Compliant Operation:** MMOUI and ESOUI explicitly prohibit automated catalogue scraping. ESO Addons Updater fully respects platform terms of service by tracking public publisher GitHub repositories (e.g. `CharacterMarkdown`) for direct release assets and providing an interactive local ZIP inspection pipeline for manually downloaded archives.
-- **Vortex Symlink & Deployment Safeguards:** Folders deployed or hardlinked via Nexus Vortex are automatically detected via `__folder_managed_by_vortex` markers and `vortex.deployment.json`, preventing destructive overwriting or desynchronisation of mod-managed directories.
+- **Vortex Symlink & Deployment Safeguards:** Folders deployed or hardlinked via Nexus Vortex are automatically detected via `__folder_managed_by_vortex` markers and `vortex.deployment.json`, preventing destructive overwriting or desynchronisation of mod-managed directories. Vortex-managed manifests are read for the dependency audit only; no write path is ever opened on them.
 - **Safety-First Atomic Replacement:** Every package deployment creates a complete, timestamped pre-update snapshot under `Backups/` accompanied by an `operation.json` transaction record. In the event of an upstream regression, previous versions can be restored instantly without compromising character `SavedVariables`.
 - **Manifest & Dependency Auditing:** Direct parsing of `.addon` / `.txt` metadata declarations enables detection of discontinued listings, missing library dependencies (e.g. LibLazyCrafting version mismatches), and outdated `APIVersion` declarations relative to the live game client.
 
@@ -44,11 +44,11 @@ While community tools such as Minion serve general catalogue updates, modern add
   Refuses to scan, preview or write unless the configured folder is an `AddOns` directory. A parent folder such as `live`, any path through `SavedVariables`, and any backup location inside `SavedVariables` are rejected before anything is touched, so character data stays out of every operation.
 
 
-- **Discontinued & Deprecation Review Filters:**  
-  Cross-references installed add-ons against ESOUI's *Discontinued & Outdated* catalogued listings (e.g. `CritPercent`, `ESO-Database Export`, `MundusMap`), recommending cleanup when appropriate.
+- **Review-Grade Dependency Audit:**  
+  The **Review** filter surfaces each add-on's compatibility concerns in one place: ESOUI *Discontinued & Outdated* listings (e.g. `CritPercent`, `ESO-Database Export`, `MundusMap`); hard dependencies missing from the inventory by folder name; and `AddOnVersion` shortfalls against `DependsOn >= N` minimums shown on both sides of the pair — the consumer sees what it needs and the provider sees who requires it. Vortex-managed libraries participate in the comparison, with "Update that folder in Vortex." / "Update it in Vortex." hints where relevant.
 
 - **Live Game API Compatibility Checker:**  
-  Enables players to input their live game API version (retrieved in-game via `/script d(GetAPIVersion())`) to pinpoint add-ons requiring maintenance or updated manifests.
+  Enter the live game API version (retrieved in-game via `/script d(GetAPIVersion())`) to compare it against each manifest's declared `APIVersion` range. A manifest whose highest declaration is older than the client is flagged for a compatibility check; one whose lowest declaration is newer than the client is noted so you can watch for it after a game update. A live API inside the declared range is silent.
 
 - **Modern CustomTkinter GUI:**  
   Fluid, responsive Windows 10/11 native presentation featuring dark and light theme adaptability, structured data grids, asynchronous release fetching, and real-time operation status reporting.
